@@ -26,19 +26,32 @@ jobs:
           BUCKET_NAME="sensor-backend-terraform-state"
           REGION="${{ github.event.inputs.aws_region }}"
           
-          # Create bucket (different command for us-east-1 vs other regions)
-          if [ "$REGION" = "us-east-1" ]; then
-            aws s3api create-bucket \
-              --bucket $BUCKET_NAME \
-              --region $REGION 2>/dev/null || echo "Bucket exists"
+          echo "Creating bucket: $BUCKET_NAME in region: $REGION"
+          
+          # Check if bucket already exists
+          if aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
+            echo "✅ Bucket $BUCKET_NAME already exists"
           else
-            aws s3api create-bucket \
-              --bucket $BUCKET_NAME \
-              --region $REGION \
-              --create-bucket-configuration LocationConstraint=$REGION 2>/dev/null || echo "Bucket exists"
+            echo "Creating new bucket..."
+            # Create bucket (different command for us-east-1 vs other regions)
+            if [ "$REGION" = "us-east-1" ]; then
+              aws s3api create-bucket \
+                --bucket $BUCKET_NAME \
+                --region $REGION
+            else
+              aws s3api create-bucket \
+                --bucket $BUCKET_NAME \
+                --region $REGION \
+                --create-bucket-configuration LocationConstraint=$REGION
+            fi
+            echo "✅ Bucket created successfully"
           fi
           
+          # Wait a moment for bucket to be ready
+          sleep 5
+          
           # Enable versioning
+          echo "Enabling versioning..."
           aws s3api put-bucket-versioning \
             --bucket $BUCKET_NAME \
             --versioning-configuration Status=Enabled
