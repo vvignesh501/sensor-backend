@@ -63,13 +63,11 @@ jobs:
           cache: 'pip'
       
       - name: Install dependencies
-        working-directory: ./sensor-backend
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
       
       - name: Run tests
-        working-directory: ./sensor-backend
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/sensordb
         run: |
@@ -121,8 +119,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./sensor-backend
-          file: ./sensor-backend/infrastructure/docker/Dockerfile
+          context: .
+          file: ./infrastructure/docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -142,7 +140,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: ./sensor-backend/infrastructure/terraform
+        working-directory: ./infrastructure/terraform
     
     steps:
       - name: Checkout code
@@ -188,7 +186,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: terraform-outputs
-          path: sensor-backend/infrastructure/terraform/terraform-outputs.json
+          path: infrastructure/terraform/terraform-outputs.json
 
   deploy-lambda:
     name: Deploy Lambda Functions
@@ -215,7 +213,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       
       - name: Package Lambda function
-        working-directory: ./sensor-backend
         run: |
           mkdir -p lambda_package
           pip install -r lambda/requirements.txt -t lambda_package/
@@ -223,7 +220,6 @@ jobs:
           cd lambda_package && zip -r ../sensor_data_processor.zip . && cd ..
       
       - name: Update Lambda function
-        working-directory: ./sensor-backend
         run: |
           aws lambda update-function-code \
             --function-name sensor-data-processor \
