@@ -85,8 +85,9 @@ resource "aws_dynamodb_table" "sensor_metadata" {
   }
 
   global_secondary_index {
-    name     = "TimestampIndex"
-    hash_key = "processing_timestamp"
+    name            = "TimestampIndex"
+    hash_key        = "processing_timestamp"
+    projection_type = "ALL"
   }
 
   tags = {
@@ -176,8 +177,8 @@ resource "aws_redshift_cluster" "sensor_analytics" {
   node_type              = var.redshift_node_type
   cluster_type           = "single-node"
   
-  db_subnet_group_name   = aws_redshift_subnet_group.sensor_analytics.name
-  vpc_security_group_ids = [aws_security_group.redshift.id]
+  cluster_subnet_group_name = aws_redshift_subnet_group.sensor_analytics.name
+  vpc_security_group_ids    = [aws_security_group.redshift.id]
   
   skip_final_snapshot = true
   publicly_accessible = false
