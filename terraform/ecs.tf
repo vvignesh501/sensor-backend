@@ -134,7 +134,7 @@ resource "aws_ecs_task_definition" "sensor_backend" {
 
   container_definitions = jsonencode([{
     name  = var.project_name
-    image = "${aws_ecr_repository.sensor_backend.repository_url}:latest"
+    image = "${data.aws_ecr_repository.sensor_backend.repository_url}:latest"
     
     portMappings = [{
       containerPort = 8000
