@@ -26,35 +26,47 @@ jobs:
           BUCKET_NAME="sensor-backend-terraform-state"
           REGION="${{ github.event.inputs.aws_region }}"
           
-          echo "Creating bucket: $BUCKET_NAME in region: $REGION"
+          echo "================================================"
+          echo "Creating bucket: $BUCKET_NAME"
+          echo "Region: $REGION"
+          echo "================================================"
           
-          # Check if bucket already exists
-          if aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
-            echo "✅ Bucket $BUCKET_NAME already exists"
+          # Try to create bucket
+          echo "Attempting to create bucket..."
+          if [ "$REGION" = "us-east-1" ]; then
+            aws s3api create-bucket \
+              --bucket $BUCKET_NAME \
+              --region $REGION || echo "Bucket may already exist"
           else
-            echo "Creating new bucket..."
-            # Create bucket (different command for us-east-1 vs other regions)
-            if [ "$REGION" = "us-east-1" ]; then
-              aws s3api create-bucket \
-                --bucket $BUCKET_NAME \
-                --region $REGION
-            else
-              aws s3api create-bucket \
-                --bucket $BUCKET_NAME \
-                --region $REGION \
-                --create-bucket-configuration LocationConstraint=$REGION
-            fi
-            echo "✅ Bucket created successfully"
+            aws s3api create-bucket \
+              --bucket $BUCKET_NAME \
+              --region $REGION \
+              --create-bucket-configuration LocationConstraint=$REGION || echo "Bucket may already exist"
           fi
           
-          # Wait a moment for bucket to be ready
-          sleep 5
+          # Verify bucket exists
+          echo "Verifying bucket exists..."
+          if aws s3 ls s3://$BUCKET_NAME 2>/dev/null; then
+            echo "✅ Bucket verified: $BUCKET_NAME"
+          else
+            echo "❌ Bucket verification failed!"
+            echo "Listing all buckets:"
+            aws s3 ls
+            exit 1
+          fi
+          
+          # Wait for bucket to be fully ready
+          echo "Waiting for bucket to be ready..."
+          sleep 10
           
           # Enable versioning
           echo "Enabling versioning..."
           aws s3api put-bucket-versioning \
             --bucket $BUCKET_NAME \
+            --region $REGION \
             --versioning-configuration Status=Enabled
+          
+          echo "✅ Versioning enabled"
           
           # Enable encryption
           aws s3api put-bucket-encryption \
