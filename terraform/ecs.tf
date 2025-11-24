@@ -201,7 +201,7 @@ resource "aws_lb" "sensor_backend" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = [aws_subnet.redshift_subnet_1.id, aws_subnet.redshift_subnet_2.id]
+  subnets            = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
 
   enable_deletion_protection = false
 
@@ -309,7 +309,7 @@ resource "aws_ecs_service" "sensor_backend" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = [aws_subnet.redshift_subnet_1.id, aws_subnet.redshift_subnet_2.id]
+    subnets          = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }

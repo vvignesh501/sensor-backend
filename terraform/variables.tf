@@ -16,7 +16,6 @@ variable "project_name" {
   default     = "sensor-backend"
 }
 
-
 variable "alert_email" {
   description = "Email address for anomaly alerts"
   type        = string
@@ -33,12 +32,6 @@ variable "lambda_memory_size" {
   description = "Lambda function memory size in MB"
   type        = number
   default     = 1024
-}
-
-variable "enable_redshift" {
-  description = "Enable Redshift cluster creation"
-  type        = bool
-  default     = false
 }
 
 variable "tags" {

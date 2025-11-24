@@ -1,4 +1,4 @@
-# Terraform configuration for N-Dimensional Data Processing Infrastructure
+# Terraform configuration for Sensor Backend Infrastructure
 
 terraform {
   required_version = ">= 1.0"
@@ -14,16 +14,13 @@ provider "aws" {
   region = var.aws_region
 }
 
+# S3 Buckets
 resource "aws_s3_bucket" "source_data" {
   bucket = "sensor-prod-data-vvignesh501-2025"
   
   tags = {
     Name        = "Sensor Source Data"
     Environment = var.environment
-  }
-  
-  lifecycle {
-    ignore_changes = [bucket]
   }
 }
 
@@ -117,46 +114,73 @@ resource "aws_sns_topic_subscription" "anomaly_email" {
   endpoint  = var.alert_email
 }
 
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "redshift.amazonaws.com"
-        }
-      }
-    ]
-  })
+# VPC for ECS
+resource "aws_vpc" "sensor_analytics" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name        = "Sensor Analytics VPC"
+    Environment = var.environment
+  }
 }
 
-# IAM Policy for Redshift S3 Access
-resource "aws_iam_role_policy" "redshift_s3_policy" {
-  name = "redshift-s3-policy"
-  role = aws_iam_role.redshift_s3_access.id
+# Subnets for ECS
+resource "aws_subnet" "public_subnet_1" {
+  vpc_id                  = aws_vpc.sensor_analytics.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.processed_data.arn,
-          "${aws_s3_bucket.processed_data.arn}/*"
-        ]
-      }
-    ]
-  })
+  tags = {
+    Name = "Public Subnet 1"
+  }
 }
 
-# Attach role to Redshift cluster
-resource "aws_redshift_cluster_iam_roles" "sensor_analytics" {
-  count = var.enable_redshift ? 1 : 0
-  
-  cluster_identifier = aws_redshift_cluster.sensor_analytics[0].cluster_identifier
-  iam_role_arns     = [aws_iam_role.redshift_s3_access.arn]
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id                  = aws_vpc.sensor_analytics.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "${var.aws_region}b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "Public Subnet 2"
+  }
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "sensor_analytics" {
+  vpc_id = aws_vpc.sensor_analytics.id
+
+  tags = {
+    Name = "Sensor Analytics IGW"
+  }
+}
+
+# Route Table
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.sensor_analytics.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.sensor_analytics.id
+  }
+
+  tags = {
+    Name = "Public Route Table"
+  }
+}
+
+# Route Table Associations
+resource "aws_route_table_association" "public_1" {
+  subnet_id      = aws_subnet.public_subnet_1.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_2" {
+  subnet_id      = aws_subnet.public_subnet_2.id
+  route_table_id = aws_route_table.public.id
 }
 
 # IAM Role for Lambda
@@ -233,15 +257,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "sns:Publish"
         ]
         Resource = aws_sns_topic.anomaly_alerts.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "redshift-data:ExecuteStatement",
-          "redshift-data:DescribeStatement",
-          "redshift-data:GetStatementResult"
-        ]
-        Resource = "*"
       }
     ]
   })
@@ -263,16 +278,8 @@ resource "aws_lambda_function" "data_processor" {
       PROCESSED_BUCKET   = aws_s3_bucket.processed_data.bucket
       METADATA_TABLE     = aws_dynamodb_table.sensor_metadata.name
       ANOMALY_TOPIC_ARN  = aws_sns_topic.anomaly_alerts.arn
-      REDSHIFT_CLUSTER   = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].cluster_identifier : ""
-      REDSHIFT_DATABASE  = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].database_name : ""
-      REDSHIFT_USER      = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].master_username : ""
     }
   }
-
-  depends_on = [
-    aws_iam_role_policy.lambda_policy,
-    aws_cloudwatch_log_group.lambda_logs
-  ]
 
   tags = {
     Name        = "Sensor Data Processor"
@@ -357,4 +364,3 @@ resource "aws_cloudwatch_dashboard" "sensor_analytics" {
     ]
   })
 }
-
