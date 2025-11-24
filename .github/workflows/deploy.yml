@@ -76,7 +76,7 @@ jobs:
           pytest tests/ -v --cov=app --cov-report=xml || echo "No tests found"
       
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
           flags: unittests
@@ -202,7 +202,7 @@ jobs:
           terraform output -json > terraform-outputs.json
       
       - name: Upload Terraform Outputs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-outputs
           path: infrastructure/terraform/terraform-outputs.json
