@@ -159,7 +159,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: ./infrastructure/terraform
+        working-directory: ./terraform
     
     steps:
       - name: Checkout code
@@ -205,7 +205,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-outputs
-          path: infrastructure/terraform/terraform-outputs.json
+          path: terraform/terraform-outputs.json
 
   deploy-lambda:
     name: Deploy Lambda Functions
