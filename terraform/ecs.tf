@@ -22,6 +22,10 @@ resource "aws_ecr_repository" "sensor_backend" {
   }
 
   tags = var.tags
+  
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # ECR Lifecycle Policy

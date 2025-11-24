@@ -21,6 +21,10 @@ resource "aws_s3_bucket" "source_data" {
     Name        = "Sensor Source Data"
     Environment = var.environment
   }
+  
+  lifecycle {
+    ignore_changes = [bucket]
+  }
 }
 
 resource "aws_s3_bucket" "processed_data" {

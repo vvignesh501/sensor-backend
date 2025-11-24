@@ -50,7 +50,7 @@ variable "redshift_node_type" {
 variable "enable_redshift" {
   description = "Enable Redshift cluster creation"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "tags" {
