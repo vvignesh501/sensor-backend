@@ -12,8 +12,15 @@ resource "aws_ecs_cluster" "sensor_backend" {
   })
 }
 
-# ECR Repository
+# ECR Repository - use existing or create new
+data "aws_ecr_repository" "sensor_backend" {
+  name = var.project_name
+}
+
+# If data source fails, this will be used (but we create it in workflow first)
 resource "aws_ecr_repository" "sensor_backend" {
+  count = 0  # Don't create, use existing from workflow
+  
   name                 = var.project_name
   image_tag_mutability = "MUTABLE"
 
@@ -22,10 +29,6 @@ resource "aws_ecr_repository" "sensor_backend" {
   }
 
   tags = var.tags
-  
-  lifecycle {
-    ignore_changes = [name]
-  }
 }
 
 # ECR Lifecycle Policy
@@ -366,7 +369,7 @@ resource "aws_appautoscaling_policy" "ecs_memory_policy" {
 # Outputs for ECS
 output "ecr_repository_url" {
   description = "URL of the ECR repository"
-  value       = aws_ecr_repository.sensor_backend.repository_url
+  value       = data.aws_ecr_repository.sensor_backend.repository_url
 }
 
 output "ecs_cluster_name" {

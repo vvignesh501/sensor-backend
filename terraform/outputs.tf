@@ -48,21 +48,6 @@ output "cloudwatch_dashboard_url" {
   value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.sensor_analytics.dashboard_name}"
 }
 
-output "redshift_cluster_endpoint" {
-  description = "Redshift cluster endpoint"
-  value       = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].endpoint : null
-}
-
-output "redshift_cluster_id" {
-  description = "Redshift cluster identifier"
-  value       = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].cluster_identifier : null
-}
-
-output "redshift_database_name" {
-  description = "Redshift database name"
-  value       = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].database_name : null
-}
-
 output "vpc_id" {
   description = "VPC ID"
   value       = aws_vpc.sensor_analytics.id
