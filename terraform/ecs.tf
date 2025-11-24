@@ -12,28 +12,14 @@ resource "aws_ecs_cluster" "sensor_backend" {
   })
 }
 
-# ECR Repository - use existing or create new
+# ECR Repository - reference existing one created by workflow
 data "aws_ecr_repository" "sensor_backend" {
   name = var.project_name
 }
 
-# If data source fails, this will be used (but we create it in workflow first)
-resource "aws_ecr_repository" "sensor_backend" {
-  count = 0  # Don't create, use existing from workflow
-  
-  name                 = var.project_name
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  tags = var.tags
-}
-
 # ECR Lifecycle Policy
 resource "aws_ecr_lifecycle_policy" "sensor_backend" {
-  repository = aws_ecr_repository.sensor_backend.name
+  repository = data.aws_ecr_repository.sensor_backend.name
 
   policy = jsonencode({
     rules = [{
