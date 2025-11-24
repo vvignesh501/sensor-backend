@@ -14,19 +14,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "prod"
-}
-
-# S3 Buckets
 resource "aws_s3_bucket" "source_data" {
   bucket = "sensor-prod-data-vvignesh501-2025"
   
@@ -473,43 +460,3 @@ resource "aws_cloudwatch_dashboard" "sensor_analytics" {
   })
 }
 
-# Outputs
-output "lambda_function_arn" {
-  description = "ARN of the Lambda function"
-  value       = aws_lambda_function.data_processor.arn
-}
-
-output "source_bucket_name" {
-  description = "Name of the source S3 bucket"
-  value       = aws_s3_bucket.source_data.bucket
-}
-
-output "processed_bucket_name" {
-  description = "Name of the processed data S3 bucket"
-  value       = aws_s3_bucket.processed_data.bucket
-}
-
-output "dynamodb_table_name" {
-  description = "Name of the DynamoDB metadata table"
-  value       = aws_dynamodb_table.sensor_metadata.name
-}
-
-output "sns_topic_arn" {
-  description = "ARN of the SNS topic for anomaly alerts"
-  value       = aws_sns_topic.anomaly_alerts.arn
-}
-
-output "cloudwatch_dashboard_url" {
-  description = "URL of the CloudWatch dashboard"
-  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.sensor_analytics.dashboard_name}"
-}
-
-output "redshift_cluster_endpoint" {
-  description = "Redshift cluster endpoint"
-  value       = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].endpoint : null
-}
-
-output "redshift_cluster_id" {
-  description = "Redshift cluster identifier"
-  value       = var.enable_redshift ? aws_redshift_cluster.sensor_analytics[0].cluster_identifier : null
-}
