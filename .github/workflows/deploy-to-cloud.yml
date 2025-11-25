@@ -46,10 +46,12 @@ jobs:
       
       - name: Create S3 Backend Bucket (if needed)
         run: |
-          aws s3 mb s3://sensor-backend-terraform-state-vvignesh501 --region us-east-2 || true
+          aws s3 mb s3://sensor-backend-terraform-state --region us-east-2 || true
           aws s3api put-bucket-versioning \
-            --bucket sensor-backend-terraform-state-vvignesh501 \
+            --bucket sensor-backend-terraform-state \
             --versioning-configuration Status=Enabled || true
+          echo "Waiting for S3 bucket to be ready..."
+          sleep 5
       
       - name: Terraform Init
         working-directory: ./terraform
