@@ -69,9 +69,25 @@ jobs:
         working-directory: ./terraform
         continue-on-error: true
         run: |
-          terraform import aws_iam_role.ecs_execution sensor-ecs-execution-clean || true
-          terraform import aws_vpc.main $(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=sensor-vpc" --query 'Vpcs[0].VpcId' --output text --region us-east-2) || true
-          terraform import aws_ecs_cluster.main sensor-cluster-clean || true
+          echo "Importing existing resources (if any)..."
+          
+          # Import IAM role if exists
+          if aws iam get-role --role-name sensor-ecs-execution-clean --region us-east-2 2>/dev/null; then
+            terraform import aws_iam_role.ecs_execution sensor-ecs-execution-clean || true
+          fi
+          
+          # Import VPC if exists
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=sensor-vpc" --query 'Vpcs[0].VpcId' --output text --region us-east-2 2>/dev/null)
+          if [ "$VPC_ID" != "None" ] && [ -n "$VPC_ID" ]; then
+            terraform import aws_vpc.main $VPC_ID || true
+          fi
+          
+          # Import ECS cluster if exists
+          if aws ecs describe-clusters --clusters sensor-cluster-clean --region us-east-2 --query 'clusters[0].clusterName' --output text 2>/dev/null | grep -q sensor-cluster-clean; then
+            terraform import aws_ecs_cluster.main sensor-cluster-clean || true
+          fi
+          
+          echo "Import complete"
       
 
       
