@@ -52,6 +52,7 @@ jobs:
         working-directory: ./terraform
         run: |
           # Try to unlock any stale locks
+          terraform force-unlock -force 5af19c57-fcd9-bb36-6a3d-9d197f733333 || true
           terraform force-unlock -force 0c0467e1-d864-13fd-3987-a3e9d3dd1728 || true
           terraform force-unlock -force 729f35fe-f6fb-948a-89a0-de277c200a28 || true
         continue-on-error: true
