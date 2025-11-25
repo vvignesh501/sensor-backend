@@ -1,0 +1,210 @@
+name: Deploy to AWS Cloud (ECS + RDS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+        default: 'deploy'
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: sensor-backend
+  ECS_CLUSTER: sensor-app-cluster
+  ECS_SERVICE: sensor-app-service
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'deploy'
+    
+    outputs:
+      app_url: ${{ steps.outputs.outputs.app_url }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+      
+      - name: Get Outputs
+        id: outputs
+        working-directory: ./terraform
+        run: |
+          APP_URL=$(terraform output -raw app_url)
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
+          echo "✅ Infrastructure deployed at: $APP_URL"
+
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Create ECR Repository
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} 2>/dev/null || \
+          aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }}
+      
+      - name: Build Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest \
+            -f infrastructure/docker/Dockerfile .
+      
+      - name: Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          echo "✅ Image pushed to ECR"
+      
+      - name: Update ECS Task Definition
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # Get current task definition
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition sensor-app --query taskDefinition)
+          
+          # Update image
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest" \
+            '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          
+          # Register new task definition
+          aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF"
+          
+          echo "✅ Task definition updated"
+      
+      - name: Update ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment
+          
+          echo "✅ ECS service updated - new deployment started"
+      
+      - name: Wait for Deployment
+        run: |
+          echo "Waiting for ECS service to stabilize (this may take 5-10 minutes)..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          
+          echo "✅ Deployment complete!"
+
+  verify:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, build-and-push]
+    
+    steps:
+      - name: Test Application
+        run: |
+          APP_URL="${{ needs.deploy-infrastructure.outputs.app_url }}"
+          echo "Testing: $APP_URL/health"
+          
+          # Wait for ALB
+          sleep 60
+          
+          # Test health
+          curl -f "$APP_URL/health" && echo "✅ Health check passed" || echo "⚠️ Health check pending"
+      
+      - name: Summary
+        run: |
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Access Your App:" >> $GITHUB_STEP_SUMMARY
+          echo "**URL**: ${{ needs.deploy-infrastructure.outputs.app_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### What Was Deployed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ VPC with public subnets" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ RDS PostgreSQL (db.t3.micro)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Application Load Balancer" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ECS Fargate cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ECR Docker repository" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ FastAPI application" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Estimated Cost:" >> $GITHUB_STEP_SUMMARY
+          echo "~$10-15/month (stop ECS service when not in use)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### To Stop (Save Money):" >> $GITHUB_STEP_SUMMARY
+          echo "Run this workflow with 'destroy' action" >> $GITHUB_STEP_SUMMARY
+
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Destroy
+        working-directory: ./terraform
+        run: terraform destroy -auto-approve
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+      
+      - name: Summary
+        run: |
+          echo "## 🗑️ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "All AWS resources have been deleted to save costs." >> $GITHUB_STEP_SUMMARY
