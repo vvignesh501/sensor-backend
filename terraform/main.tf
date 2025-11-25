@@ -109,74 +109,9 @@ resource "aws_sns_topic_subscription" "anomaly_email" {
   endpoint  = var.alert_email
 }
 
-# VPC for ECS
-resource "aws_vpc" "sensor_analytics" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name        = "Sensor Analytics VPC"
-    Environment = var.environment
-  }
-}
-
-# Subnets for ECS - use different CIDR to avoid conflicts
-resource "aws_subnet" "public_subnet_1" {
-  vpc_id                  = aws_vpc.sensor_analytics.id
-  cidr_block              = "10.0.10.0/24"
-  availability_zone       = "${var.aws_region}a"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "ECS Public Subnet 1"
-  }
-}
-
-resource "aws_subnet" "public_subnet_2" {
-  vpc_id                  = aws_vpc.sensor_analytics.id
-  cidr_block              = "10.0.20.0/24"
-  availability_zone       = "${var.aws_region}b"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "ECS Public Subnet 2"
-  }
-}
-
-# Internet Gateway
-resource "aws_internet_gateway" "sensor_analytics" {
-  vpc_id = aws_vpc.sensor_analytics.id
-
-  tags = {
-    Name = "Sensor Analytics IGW"
-  }
-}
-
-# Route Table
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.sensor_analytics.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.sensor_analytics.id
-  }
-
-  tags = {
-    Name = "Public Route Table"
-  }
-}
-
-# Route Table Associations
-resource "aws_route_table_association" "public_1" {
-  subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.public.id
-}
-
-resource "aws_route_table_association" "public_2" {
-  subnet_id      = aws_subnet.public_subnet_2.id
-  route_table_id = aws_route_table.public.id
-}
+# Note: VPC and ECS resources removed to simplify deployment
+# Lambda runs without VPC for faster cold starts and simpler networking
+# If VPC is needed later, add it back with proper NAT Gateway configuration
 
 # IAM Role for Lambda
 resource "aws_iam_role" "lambda_execution_role" {
@@ -257,29 +192,37 @@ resource "aws_iam_role_policy" "lambda_policy" {
   })
 }
 
-# Lambda Function
-resource "aws_lambda_function" "data_processor" {
-  filename         = "sensor_data_processor.zip"
-  function_name    = "sensor-data-processor"
-  role            = aws_iam_role.lambda_execution_role.arn
-  handler         = "lambda_data_processor.lambda_handler"
-  runtime         = "python3.9"
-  timeout         = 300
-  memory_size     = 1024
+# Reference existing Lambda function (created manually in AWS Console)
+data "aws_lambda_function" "data_processor" {
+  function_name = "sensor-data-processor"
+}
 
-  environment {
-    variables = {
-      SOURCE_BUCKET      = data.aws_s3_bucket.source_data.bucket
-      PROCESSED_BUCKET   = aws_s3_bucket.processed_data.bucket
-      METADATA_TABLE     = aws_dynamodb_table.sensor_metadata.name
-      ANOMALY_TOPIC_ARN  = aws_sns_topic.anomaly_alerts.arn
-    }
+# Update Lambda function configuration (IAM role, environment variables, etc.)
+# This doesn't update the code - GitHub Actions handles code updates
+resource "null_resource" "update_lambda_config" {
+  triggers = {
+    role_arn = aws_iam_role.lambda_execution_role.arn
   }
 
-  tags = {
-    Name        = "Sensor Data Processor"
-    Environment = var.environment
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws lambda update-function-configuration \
+        --function-name sensor-data-processor \
+        --role ${aws_iam_role.lambda_execution_role.arn} \
+        --timeout 300 \
+        --memory-size 1024 \
+        --environment Variables="{SOURCE_BUCKET=${data.aws_s3_bucket.source_data.bucket},PROCESSED_BUCKET=${aws_s3_bucket.processed_data.bucket},METADATA_TABLE=${aws_dynamodb_table.sensor_metadata.name},ANOMALY_TOPIC_ARN=${aws_sns_topic.anomaly_alerts.arn}}" \
+        --region ${var.aws_region}
+    EOT
   }
+
+  depends_on = [
+    aws_iam_role.lambda_execution_role,
+    aws_iam_role_policy.lambda_policy,
+    aws_s3_bucket.processed_data,
+    aws_dynamodb_table.sensor_metadata,
+    aws_sns_topic.anomaly_alerts
+  ]
 }
 
 # CloudWatch Log Group
@@ -293,7 +236,7 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
   bucket = data.aws_s3_bucket.source_data.id
 
   lambda_function {
-    lambda_function_arn = aws_lambda_function.data_processor.arn
+    lambda_function_arn = data.aws_lambda_function.data_processor.arn
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "raw_data/"
     filter_suffix       = ".npy"
@@ -306,7 +249,7 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
 resource "aws_lambda_permission" "s3_invoke" {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.data_processor.function_name
+  function_name = data.aws_lambda_function.data_processor.function_name
   principal     = "s3.amazonaws.com"
   source_arn    = data.aws_s3_bucket.source_data.arn
 }
@@ -326,7 +269,7 @@ resource "aws_cloudwatch_dashboard" "sensor_analytics" {
 
         properties = {
           metrics = [
-            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.data_processor.function_name],
+            ["AWS/Lambda", "Duration", "FunctionName", data.aws_lambda_function.data_processor.function_name],
             [".", "Errors", ".", "."],
             [".", "Invocations", ".", "."]
           ]
