@@ -53,6 +53,12 @@ jobs:
           echo "Waiting for S3 bucket to be ready..."
           sleep 5
       
+      - name: Clean Corrupted State (if any)
+        run: |
+          # Remove corrupted state file
+          aws s3 rm s3://sensor-backend-terraform-state/prod/terraform.tfstate || true
+          echo "State cleaned"
+      
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init -reconfigure
