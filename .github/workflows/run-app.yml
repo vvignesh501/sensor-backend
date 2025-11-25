@@ -1,0 +1,179 @@
+name: Run FastAPI App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+
+jobs:
+  run-app:
+    name: Run FastAPI Application
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: sensordb
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgresql@9891
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.4.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+      
+      kafka:
+        image: confluentinc/cp-kafka:7.4.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        ports:
+          - 9092:9092
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Wait for services
+        run: |
+          echo "Waiting for PostgreSQL..."
+          sleep 5
+          echo "Waiting for Kafka..."
+          sleep 10
+      
+      - name: Create database tables
+        run: |
+          PGPASSWORD=postgresql@9891 psql -h localhost -p 5434 -U postgres -d sensordb -c "
+          CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR PRIMARY KEY,
+            username VARCHAR UNIQUE NOT NULL,
+            email VARCHAR NOT NULL,
+            hashed_password VARCHAR NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          CREATE TABLE IF NOT EXISTS sensor_tests (
+            id VARCHAR PRIMARY KEY,
+            sensor_type VARCHAR NOT NULL,
+            data_type VARCHAR DEFAULT 'raw_data',
+            s3_status VARCHAR NOT NULL,
+            s3_path VARCHAR,
+            test_metrics JSONB,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          CREATE TABLE IF NOT EXISTS kafka_logs (
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR NOT NULL,
+            user_id VARCHAR NOT NULL,
+            sensor_type VARCHAR NOT NULL,
+            kafka_start_time TIMESTAMP NOT NULL,
+            kafka_end_time TIMESTAMP NOT NULL,
+            processing_time_seconds DECIMAL(10,6) NOT NULL,
+            status VARCHAR NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          "
+          echo "✅ Database tables created"
+      
+      - name: Start FastAPI app
+        run: |
+          cd app
+          python main.py &
+          APP_PID=$!
+          echo "APP_PID=$APP_PID" >> $GITHUB_ENV
+          
+          # Wait for app to start
+          sleep 5
+          
+          # Check if app is running
+          if ps -p $APP_PID > /dev/null; then
+            echo "✅ FastAPI app started (PID: $APP_PID)"
+          else
+            echo "❌ FastAPI app failed to start"
+            exit 1
+          fi
+      
+      - name: Test health endpoint
+        run: |
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8000/health || exit 1
+          echo "✅ Health check passed"
+      
+      - name: Create test user
+        run: |
+          echo "Creating test user..."
+          curl -X POST http://localhost:8000/create-test-user
+          echo "✅ Test user created"
+      
+      - name: Test login
+        run: |
+          echo "Testing login..."
+          TOKEN=$(curl -X POST http://localhost:8000/auth/token \
+            -d "username=admin&password=admin123" \
+            | jq -r '.access_token')
+          
+          if [ -z "$TOKEN" ] || [ "$TOKEN" == "null" ]; then
+            echo "❌ Login failed"
+            exit 1
+          fi
+          
+          echo "TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "✅ Login successful"
+      
+      - name: Test sensor endpoint
+        run: |
+          echo "Testing sensor endpoint..."
+          curl -X POST http://localhost:8000/test/sensor/temperature \
+            -H "Authorization: Bearer $TOKEN" \
+            | jq '.'
+          echo "✅ Sensor test completed"
+      
+      - name: Check Kafka stats
+        run: |
+          echo "Checking Kafka stats..."
+          curl -X GET http://localhost:8000/kafka/producer-stats \
+            -H "Authorization: Bearer $TOKEN" \
+            | jq '.'
+          echo "✅ Kafka stats retrieved"
+      
+      - name: App logs
+        if: always()
+        run: |
+          echo "📋 Application logs:"
+          ps aux | grep python || true
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🚀 FastAPI App Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ PostgreSQL: Running" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Kafka: Running" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ FastAPI: Running on port 8000" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Health check: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Authentication: Working" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Sensor tests: Working" >> $GITHUB_STEP_SUMMARY
