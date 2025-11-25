@@ -152,7 +152,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier           = "sensor-postgres"
+  identifier           = "sensor-postgres-v2"
   engine               = "postgres"
   # engine_version omitted - AWS will use latest stable version
   instance_class       = "db.t3.micro"  # Free tier: 750 hours/month
