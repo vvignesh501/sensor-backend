@@ -1,0 +1,24 @@
+ERROR: "Creation of service was not idempotent"
+CAUSE: ECS service already exists in AWS but not in Terraform state
+
+SOLUTION 1 - Import Existing Service (Recommended):
+cd sensor-backend/terraform
+terraform import aws_ecs_service.app_service sensor-app-cluster/sensor-app-service
+terraform apply
+
+SOLUTION 2 - Delete and Recreate:
+aws ecs delete-service --cluster sensor-app-cluster --service sensor-app-service --force --region us-east-2
+sleep 60
+cd sensor-backend/terraform
+terraform apply
+
+SOLUTION 3 - Use Different Name:
+Edit terraform/ecs-app.tf line 299:
+Change: name = "sensor-app-service"
+To:     name = "sensor-app-service-v2"
+
+Then run: terraform apply
+
+GITHUB ACTIONS FIX:
+Already added import step to .github/workflows/deploy-to-cloud.yml
+Just re-run the workflow - it will auto-import now

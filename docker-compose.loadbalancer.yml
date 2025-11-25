@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:13
+    container_name: sensor-postgres-lb
+    environment:
+      POSTGRES_DB: sensordb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgresql@9891
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI App Instance 1
+  app1:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+    container_name: sensor-app-1
+    environment:
+      DATABASE_URL: postgresql://postgres:postgresql@9891@postgres:5432/sensordb
+      INSTANCE_ID: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  # FastAPI App Instance 2
+  app2:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+    container_name: sensor-app-2
+    environment:
+      DATABASE_URL: postgresql://postgres:postgresql@9891@postgres:5432/sensordb
+      INSTANCE_ID: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  # FastAPI App Instance 3
+  app3:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+    container_name: sensor-app-3
+    environment:
+      DATABASE_URL: postgresql://postgres:postgresql@9891@postgres:5432/sensordb
+      INSTANCE_ID: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: sensor-nginx-lb
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app1
+      - app2
+      - app3
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

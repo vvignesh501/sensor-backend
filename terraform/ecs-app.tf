@@ -182,6 +182,14 @@ resource "aws_lb" "app_alb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  
+  # Enable HTTP/2 (enabled by default on ALB, but explicit is better)
+  enable_http2                     = true
+  enable_deletion_protection       = false
+  enable_cross_zone_load_balancing = true
+  
+  # Connection settings for better performance
+  idle_timeout = 60
 
   tags = {
     Name = "Sensor App ALB"

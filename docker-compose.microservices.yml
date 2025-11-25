@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:13
+    container_name: sensor-postgres
+    environment:
+      POSTGRES_DB: sensordb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgresql@9891
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sensor-network
+
+  # Kafka & Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: sensor-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - sensor-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: sensor-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sensor-network
+
+  # Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgresql@9891@postgres:5432/sensordb
+      JWT_SECRET: sensor-backend-secret-key-2024
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - sensor-network
+
+  # Sensor Service
+  sensor-service:
+    build:
+      context: .
+      dockerfile: services/sensor-service/Dockerfile
+    container_name: sensor-service
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgresql@9891@postgres:5432/sensordb
+      AUTH_SERVICE_URL: http://auth-service:8001
+      KAFKA_SERVICE_URL: http://kafka-service:8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - sensor-network
+
+  # Kafka Service
+  kafka-service:
+    build:
+      context: .
+      dockerfile: services/kafka-service/Dockerfile
+    container_name: kafka-service
+    ports:
+      - "8003:8003"
+    environment:
+      KAFKA_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - sensor-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      SENSOR_SERVICE_URL: http://sensor-service:8002
+      KAFKA_SERVICE_URL: http://kafka-service:8003
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      sensor-service:
+        condition: service_healthy
+      kafka-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - sensor-network
+
+volumes:
+  postgres_data:
+
+networks:
+  sensor-network:
+    driver: bridge

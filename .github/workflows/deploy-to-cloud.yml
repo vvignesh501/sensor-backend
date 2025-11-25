@@ -48,6 +48,16 @@ jobs:
         working-directory: ./terraform
         run: terraform init -reconfigure
       
+      - name: Import Existing Resources (if any)
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          # Import ECS service if it exists
+          terraform import aws_ecs_service.app_service sensor-app-cluster/sensor-app-service || true
+          
+          # Import RDS if it exists
+          terraform import aws_db_instance.postgres sensor-postgres-v2 || true
+      
       - name: Force Unlock State (if locked)
         working-directory: ./terraform
         run: |
