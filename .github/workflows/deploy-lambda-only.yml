@@ -38,23 +38,42 @@ jobs:
           # Create package directory
           mkdir -p lambda_package
           
-          # Install dependencies if requirements.txt exists
-          if [ -f lambda/requirements.txt ]; then
-            echo "Installing dependencies..."
-            pip install -r lambda/requirements.txt -t lambda_package/
-          else
-            echo "No requirements.txt found, skipping dependencies"
-          fi
+          # Install ONLY numpy (boto3 is in Lambda runtime)
+          echo "Installing minimal dependencies..."
+          pip install numpy==1.24.3 -t lambda_package/ --platform manylinux2014_x86_64 --only-binary=:all:
+          
+          # Remove unnecessary files to reduce size
+          echo "Optimizing package size..."
+          cd lambda_package
+          
+          # Remove tests and docs
+          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -name "*.pyc" -delete 2>/dev/null || true
+          find . -name "*.pyo" -delete 2>/dev/null || true
+          find . -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find . -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+          
+          cd ..
           
           # Copy Lambda function
           cp lambda/lambda_data_processor.py lambda_package/
           
           # Create ZIP file
           cd lambda_package
-          zip -r ../sensor_data_processor.zip .
+          zip -r9 ../sensor_data_processor.zip .
           cd ..
           
-          echo "✅ Lambda package created: $(ls -lh sensor_data_processor.zip)"
+          # Check size
+          SIZE=$(du -h sensor_data_processor.zip | cut -f1)
+          echo "✅ Lambda package created: $SIZE"
+          
+          # Warn if too large
+          SIZE_BYTES=$(stat -f%z sensor_data_processor.zip 2>/dev/null || stat -c%s sensor_data_processor.zip)
+          if [ $SIZE_BYTES -gt 50000000 ]; then
+            echo "⚠️  Warning: Package is large ($SIZE). Consider using Lambda Layers."
+          fi
       
       - name: Check if Lambda function exists
         id: check_lambda

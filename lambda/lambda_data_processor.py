@@ -1,7 +1,6 @@
 import json
 import boto3
 import numpy as np
-import pandas as pd
 from datetime import datetime
 import io
 import gzip
