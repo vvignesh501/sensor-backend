@@ -89,12 +89,19 @@ jobs:
           terraform import aws_iam_role.ecs_execution sensor-ecs-execution-clean 2>/dev/null || true
           terraform import aws_ecs_cluster.main sensor-cluster-clean 2>/dev/null || true
           
-          # Import ALB and target group
+          # Import ALB
           ALB_ARN=$(aws elbv2 describe-load-balancers --names sensor-alb-clean --region us-east-2 --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null)
           if [ "$ALB_ARN" != "None" ] && [ -n "$ALB_ARN" ]; then
             terraform import aws_lb.main $ALB_ARN 2>/dev/null || true
+            
+            # Import listener
+            LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn $ALB_ARN --region us-east-2 --query 'Listeners[0].ListenerArn' --output text 2>/dev/null)
+            if [ "$LISTENER_ARN" != "None" ] && [ -n "$LISTENER_ARN" ]; then
+              terraform import aws_lb_listener.main $LISTENER_ARN 2>/dev/null || true
+            fi
           fi
           
+          # Import target group
           TG_ARN=$(aws elbv2 describe-target-groups --names sensor-tg-clean --region us-east-2 --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null)
           if [ "$TG_ARN" != "None" ] && [ -n "$TG_ARN" ]; then
             terraform import aws_lb_target_group.main $TG_ARN 2>/dev/null || true
