@@ -56,10 +56,10 @@ jobs:
           terraform force-unlock -force 729f35fe-f6fb-948a-89a0-de277c200a28 || true
         continue-on-error: true
       
-      - name: Remove cached RDS from state
+      - name: Import existing RDS instance
         working-directory: ./terraform
         run: |
-          terraform state rm aws_db_instance.postgres || true
+          terraform import aws_db_instance.postgres sensor-postgres || true
         continue-on-error: true
       
       - name: Terraform Apply
