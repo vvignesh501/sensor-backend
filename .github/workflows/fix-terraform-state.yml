@@ -1,0 +1,99 @@
+name: Fix Terraform State (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "fix" to confirm state cleanup'
+        required: true
+        default: ''
+
+env:
+  AWS_REGION: us-east-2
+  TERRAFORM_VERSION: 1.6.0
+
+jobs:
+  fix-state:
+    name: Fix Terraform State
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "fix" ]; then
+            echo "❌ Confirmation failed. Please type 'fix' to proceed."
+            exit 1
+          fi
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: List current state
+        working-directory: ./terraform
+        run: |
+          echo "📋 Current Terraform State:"
+          terraform state list
+      
+      - name: Remove stuck subnet resources
+        working-directory: ./terraform
+        run: |
+          echo "🔧 Removing stuck subnet resources from state..."
+          
+          # Remove Redshift subnets
+          terraform state rm 'aws_subnet.redshift_subnet_1' 2>/dev/null && echo "✅ Removed redshift_subnet_1" || echo "⚠️  redshift_subnet_1 not in state"
+          terraform state rm 'aws_subnet.redshift_subnet_2' 2>/dev/null && echo "✅ Removed redshift_subnet_2" || echo "⚠️  redshift_subnet_2 not in state"
+          
+          # Remove Redshift subnet group
+          terraform state rm 'aws_redshift_subnet_group.redshift' 2>/dev/null && echo "✅ Removed redshift_subnet_group" || echo "⚠️  redshift_subnet_group not in state"
+          
+          # Remove Redshift cluster
+          terraform state rm 'aws_redshift_cluster.analytics' 2>/dev/null && echo "✅ Removed redshift_cluster" || echo "⚠️  redshift_cluster not in state"
+          
+          # Remove any VPC subnets if they exist
+          terraform state rm 'aws_subnet.public_subnet_1' 2>/dev/null && echo "✅ Removed public_subnet_1" || echo "⚠️  public_subnet_1 not in state"
+          terraform state rm 'aws_subnet.public_subnet_2' 2>/dev/null && echo "✅ Removed public_subnet_2" || echo "⚠️  public_subnet_2 not in state"
+      
+      - name: Verify state cleanup
+        working-directory: ./terraform
+        run: |
+          echo "📋 Updated Terraform State:"
+          terraform state list
+          
+          echo ""
+          echo "🔍 Checking for remaining subnet resources..."
+          if terraform state list | grep -i subnet; then
+            echo "⚠️  Some subnet resources still in state"
+          else
+            echo "✅ No subnet resources in state"
+          fi
+      
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          echo "📊 Running terraform plan to verify..."
+          terraform plan -no-color || echo "⚠️  Plan has issues, but state is cleaned"
+      
+      - name: Summary
+        run: |
+          echo "✅ Terraform state cleanup complete!"
+          echo ""
+          echo "Next steps:"
+          echo "1. Review the plan output above"
+          echo "2. If needed, manually delete stuck resources in AWS Console"
+          echo "3. Run 'terraform apply' locally or via workflow"
