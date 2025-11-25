@@ -154,7 +154,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 resource "aws_db_instance" "postgres" {
   identifier           = "sensor-postgres"
   engine               = "postgres"
-  engine_version       = "16.3"  # PostgreSQL 16 (latest stable)
+  # engine_version omitted - AWS will use latest stable version
   instance_class       = "db.t3.micro"  # Free tier: 750 hours/month
   allocated_storage    = 20              # Free tier: 20GB
   storage_type         = "gp2"

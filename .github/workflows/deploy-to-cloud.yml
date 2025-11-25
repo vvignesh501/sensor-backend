@@ -55,11 +55,10 @@ jobs:
           terraform force-unlock -force 729f35fe-f6fb-948a-89a0-de277c200a28 || true
         continue-on-error: true
       
-      - name: Terraform Refresh
+      - name: Remove cached RDS from state
         working-directory: ./terraform
-        run: terraform refresh
-        env:
-          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        run: |
+          terraform state rm aws_db_instance.postgres || true
         continue-on-error: true
       
       - name: Terraform Apply
