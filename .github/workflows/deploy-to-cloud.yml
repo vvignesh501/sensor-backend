@@ -44,6 +44,13 @@ jobs:
           terraform_version: 1.6.0
           terraform_wrapper: false
       
+      - name: Create S3 Backend Bucket (if needed)
+        run: |
+          aws s3 mb s3://sensor-backend-terraform-state-vvignesh501 --region us-east-2 || true
+          aws s3api put-bucket-versioning \
+            --bucket sensor-backend-terraform-state-vvignesh501 \
+            --versioning-configuration Status=Enabled || true
+      
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init -reconfigure

@@ -1,14 +1,8 @@
 # CLEAN MINIMAL DEPLOYMENT - NO CONFLICTS
-# Use this file alone for initial deployment
+# Backend configured in backend.tf
 
 terraform {
   required_version = ">= 1.0"
-  
-  backend "s3" {
-    bucket = "sensor-backend-terraform-state-vvignesh501"
-    key    = "terraform.tfstate"
-    region = "us-east-2"
-  }
 }
 
 provider "aws" {
