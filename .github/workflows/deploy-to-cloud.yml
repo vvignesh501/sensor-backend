@@ -65,28 +65,29 @@ jobs:
         working-directory: ./terraform
         run: terraform init -reconfigure
       
-      - name: Import Existing Resources
+      - name: Clean Old Resources First
+        continue-on-error: true
+        run: |
+          echo "Cleaning old conflicting resources..."
+          
+          # Delete old ECS service first (blocks cluster deletion)
+          aws ecs update-service --cluster sensor-app-cluster --service sensor-app-service --desired-count 0 --region us-east-2 || true
+          sleep 10
+          aws ecs delete-service --cluster sensor-app-cluster --service sensor-app-service --force --region us-east-2 || true
+          
+          # Delete old RDS instance (blocks subnet group deletion)
+          aws rds delete-db-instance --db-instance-identifier sensor-postgres --skip-final-snapshot --region us-east-2 || true
+          aws rds delete-db-instance --db-instance-identifier sensor-postgres-v2 --skip-final-snapshot --region us-east-2 || true
+          
+          echo "Cleanup initiated - resources will delete in background"
+      
+      - name: Import Existing Clean Resources
         working-directory: ./terraform
         continue-on-error: true
         run: |
-          echo "Importing existing resources (if any)..."
-          
-          # Import IAM role if exists
-          if aws iam get-role --role-name sensor-ecs-execution-clean --region us-east-2 2>/dev/null; then
-            terraform import aws_iam_role.ecs_execution sensor-ecs-execution-clean || true
-          fi
-          
-          # Import VPC if exists
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=sensor-vpc" --query 'Vpcs[0].VpcId' --output text --region us-east-2 2>/dev/null)
-          if [ "$VPC_ID" != "None" ] && [ -n "$VPC_ID" ]; then
-            terraform import aws_vpc.main $VPC_ID || true
-          fi
-          
-          # Import ECS cluster if exists
-          if aws ecs describe-clusters --clusters sensor-cluster-clean --region us-east-2 --query 'clusters[0].clusterName' --output text 2>/dev/null | grep -q sensor-cluster-clean; then
-            terraform import aws_ecs_cluster.main sensor-cluster-clean || true
-          fi
-          
+          echo "Importing existing clean resources..."
+          terraform import aws_iam_role.ecs_execution sensor-ecs-execution-clean 2>/dev/null || true
+          terraform import aws_ecs_cluster.main sensor-cluster-clean 2>/dev/null || true
           echo "Import complete"
       
 
