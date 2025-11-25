@@ -1,0 +1,168 @@
+name: Deploy Complete Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm infrastructure deployment'
+        required: true
+        default: ''
+
+env:
+  AWS_REGION: us-east-2
+  TERRAFORM_VERSION: 1.6.0
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'deploy'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Verify Lambda function exists
+        id: check_lambda
+        run: |
+          if aws lambda get-function --function-name sensor-data-processor --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Lambda function exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Lambda function does not exist - will be created"
+          fi
+      
+      - name: Create Lambda deployment package (if needed)
+        if: steps.check_lambda.outputs.exists == 'false'
+        run: |
+          echo "📦 Creating Lambda deployment package..."
+          mkdir -p lambda_package
+          
+          # Install numpy
+          pip install numpy==1.24.3 -t lambda_package/ --platform manylinux2014_x86_64 --only-binary=:all:
+          
+          # Optimize package size
+          cd lambda_package
+          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -name "*.pyc" -delete 2>/dev/null || true
+          cd ..
+          
+          # Copy Lambda function
+          cp lambda/lambda_data_processor.py lambda_package/
+          
+          # Create ZIP
+          cd lambda_package
+          zip -r9 ../terraform/sensor_data_processor.zip .
+          cd ..
+          
+          SIZE=$(du -h terraform/sensor_data_processor.zip | cut -f1)
+          echo "✅ Lambda package created: $SIZE"
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_environment: production
+      
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform/plan.txt
+      
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan
+      
+      - name: Get Terraform Outputs
+        working-directory: ./terraform
+        run: |
+          echo "## 🚀 Infrastructure Deployed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resources Created:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Get outputs
+          terraform output -json > outputs.json
+          
+          echo "- **Lambda Function**: sensor-data-processor" >> $GITHUB_STEP_SUMMARY
+          echo "- **S3 Processed Bucket**: $(terraform output -raw processed_bucket_name 2>/dev/null || echo 'sensor-analytics-processed-data')" >> $GITHUB_STEP_SUMMARY
+          echo "- **DynamoDB Table**: $(terraform output -raw dynamodb_table_name 2>/dev/null || echo 'sensor-analytics-metadata')" >> $GITHUB_STEP_SUMMARY
+          echo "- **SNS Topic**: $(terraform output -raw sns_topic_arn 2>/dev/null || echo 'sensor-anomalies')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Verify Infrastructure
+        run: |
+          echo "🔍 Verifying deployed infrastructure..."
+          
+          # Check Lambda
+          aws lambda get-function --function-name sensor-data-processor --region ${{ env.AWS_REGION }} > /dev/null
+          echo "✅ Lambda function verified"
+          
+          # Check S3
+          aws s3 ls s3://sensor-analytics-processed-data > /dev/null
+          echo "✅ S3 bucket verified"
+          
+          # Check DynamoDB
+          aws dynamodb describe-table --table-name sensor-analytics-metadata --region ${{ env.AWS_REGION }} > /dev/null
+          echo "✅ DynamoDB table verified"
+          
+          echo ""
+          echo "✅ All infrastructure verified successfully!"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf lambda_package
+          rm -f terraform/sensor_data_processor.zip
+
+  notify:
+    name: Deployment Complete
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+    
+    steps:
+      - name: Success Notification
+        if: needs.deploy.result == 'success'
+        run: |
+          echo "✅ Infrastructure deployment completed successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "1. Upload test data to S3 to trigger Lambda"
+          echo "2. Check CloudWatch logs for Lambda execution"
+          echo "3. Verify processed data in S3"
+      
+      - name: Failure Notification
+        if: needs.deploy.result == 'failure'
+        run: |
+          echo "❌ Infrastructure deployment failed!"
+          echo "Check the logs above for details"
+          exit 1
