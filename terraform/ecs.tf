@@ -95,8 +95,8 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          aws_s3_bucket.source_data.arn,
-          "${aws_s3_bucket.source_data.arn}/*",
+          data.aws_s3_bucket.source_data.arn,
+          "${data.aws_s3_bucket.source_data.arn}/*",
           aws_s3_bucket.processed_data.arn,
           "${aws_s3_bucket.processed_data.arn}/*"
         ]
@@ -152,7 +152,7 @@ resource "aws_ecs_task_definition" "sensor_backend" {
       },
       {
         name  = "SOURCE_BUCKET"
-        value = aws_s3_bucket.source_data.bucket
+        value = data.aws_s3_bucket.source_data.bucket
       },
       {
         name  = "PROCESSED_BUCKET"

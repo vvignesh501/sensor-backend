@@ -10,12 +10,12 @@ output "lambda_function_name" {
 
 output "source_bucket_name" {
   description = "Name of the source S3 bucket"
-  value       = aws_s3_bucket.source_data.bucket
+  value       = data.aws_s3_bucket.source_data.bucket
 }
 
 output "source_bucket_arn" {
   description = "ARN of the source S3 bucket"
-  value       = aws_s3_bucket.source_data.arn
+  value       = data.aws_s3_bucket.source_data.arn
 }
 
 output "processed_bucket_name" {

@@ -14,14 +14,9 @@ provider "aws" {
   region = var.aws_region
 }
 
-# S3 Buckets
-resource "aws_s3_bucket" "source_data" {
+# S3 Buckets - use existing
+data "aws_s3_bucket" "source_data" {
   bucket = "sensor-prod-data-vvignesh501-2025"
-  
-  tags = {
-    Name        = "Sensor Source Data"
-    Environment = var.environment
-  }
 }
 
 resource "aws_s3_bucket" "processed_data" {
@@ -35,7 +30,7 @@ resource "aws_s3_bucket" "processed_data" {
 
 # S3 Bucket Versioning
 resource "aws_s3_bucket_versioning" "source_versioning" {
-  bucket = aws_s3_bucket.source_data.id
+  bucket = data.data.aws_s3_bucket.source_data.id
   versioning_configuration {
     status = "Enabled"
   }
@@ -50,7 +45,7 @@ resource "aws_s3_bucket_versioning" "processed_versioning" {
 
 # S3 Bucket Encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "source_encryption" {
-  bucket = aws_s3_bucket.source_data.id
+  bucket = data.data.aws_s3_bucket.source_data.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -126,26 +121,26 @@ resource "aws_vpc" "sensor_analytics" {
   }
 }
 
-# Subnets for ECS
+# Subnets for ECS - use different CIDR to avoid conflicts
 resource "aws_subnet" "public_subnet_1" {
   vpc_id                  = aws_vpc.sensor_analytics.id
-  cidr_block              = "10.0.1.0/24"
+  cidr_block              = "10.0.10.0/24"
   availability_zone       = "${var.aws_region}a"
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "Public Subnet 1"
+    Name = "ECS Public Subnet 1"
   }
 }
 
 resource "aws_subnet" "public_subnet_2" {
   vpc_id                  = aws_vpc.sensor_analytics.id
-  cidr_block              = "10.0.2.0/24"
+  cidr_block              = "10.0.20.0/24"
   availability_zone       = "${var.aws_region}b"
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "Public Subnet 2"
+    Name = "ECS Public Subnet 2"
   }
 }
 
@@ -226,7 +221,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "s3:DeleteObject"
         ]
         Resource = [
-          "${aws_s3_bucket.source_data.arn}/*",
+          "${data.aws_s3_bucket.source_data.arn}/*",
           "${aws_s3_bucket.processed_data.arn}/*"
         ]
       },
@@ -236,7 +231,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          aws_s3_bucket.source_data.arn,
+          data.aws_s3_bucket.source_data.arn,
           aws_s3_bucket.processed_data.arn
         ]
       },
@@ -274,7 +269,7 @@ resource "aws_lambda_function" "data_processor" {
 
   environment {
     variables = {
-      SOURCE_BUCKET      = aws_s3_bucket.source_data.bucket
+      SOURCE_BUCKET      = data.aws_s3_bucket.source_data.bucket
       PROCESSED_BUCKET   = aws_s3_bucket.processed_data.bucket
       METADATA_TABLE     = aws_dynamodb_table.sensor_metadata.name
       ANOMALY_TOPIC_ARN  = aws_sns_topic.anomaly_alerts.arn
@@ -295,7 +290,7 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 
 # S3 Bucket Notification
 resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = aws_s3_bucket.source_data.id
+  bucket = data.aws_s3_bucket.source_data.id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.data_processor.arn
@@ -313,7 +308,7 @@ resource "aws_lambda_permission" "s3_invoke" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.data_processor.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.source_data.arn
+  source_arn    = data.aws_s3_bucket.source_data.arn
 }
 
 # CloudWatch Dashboard
@@ -351,7 +346,7 @@ resource "aws_cloudwatch_dashboard" "sensor_analytics" {
 
         properties = {
           metrics = [
-            ["AWS/S3", "BucketSizeBytes", "BucketName", aws_s3_bucket.source_data.bucket, "StorageType", "StandardStorage"],
+            ["AWS/S3", "BucketSizeBytes", "BucketName", data.aws_s3_bucket.source_data.bucket, "StorageType", "StandardStorage"],
             [".", ".", ".", aws_s3_bucket.processed_data.bucket, ".", "."]
           ]
           view    = "timeSeries"
