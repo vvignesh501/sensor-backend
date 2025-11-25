@@ -30,7 +30,7 @@ resource "aws_s3_bucket" "processed_data" {
 
 # S3 Bucket Versioning
 resource "aws_s3_bucket_versioning" "source_versioning" {
-  bucket = data.data.aws_s3_bucket.source_data.id
+  bucket = data.aws_s3_bucket.source_data.id
   versioning_configuration {
     status = "Enabled"
   }
@@ -45,7 +45,7 @@ resource "aws_s3_bucket_versioning" "processed_versioning" {
 
 # S3 Bucket Encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "source_encryption" {
-  bucket = data.data.aws_s3_bucket.source_data.id
+  bucket = data.aws_s3_bucket.source_data.id
 
   rule {
     apply_server_side_encryption_by_default {
