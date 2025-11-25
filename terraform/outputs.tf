@@ -38,15 +38,7 @@ output "dynamodb_table_arn" {
   value       = aws_dynamodb_table.sensor_metadata.arn
 }
 
-output "sns_topic_arn" {
-  description = "ARN of the SNS topic for anomaly alerts"
-  value       = aws_sns_topic.anomaly_alerts.arn
-}
-
-output "cloudwatch_dashboard_url" {
-  description = "URL of the CloudWatch dashboard"
-  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.sensor_analytics.dashboard_name}"
-}
+# Removed duplicate outputs - defined in monitoring.tf
 
 
 
