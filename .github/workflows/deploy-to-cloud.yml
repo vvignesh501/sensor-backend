@@ -53,22 +53,17 @@ jobs:
           echo "Waiting for S3 bucket to be ready..."
           sleep 5
       
-      - name: Clean Corrupted State (if any)
+      - name: Clean State and Locks
         run: |
-          # Remove corrupted state file
+          # Remove old state and lock table
           aws s3 rm s3://sensor-backend-terraform-state/prod/terraform.tfstate || true
-          echo "State cleaned"
+          aws dynamodb delete-table --table-name terraform-state-lock --region us-east-2 || true
+          echo "State and locks cleaned"
+          sleep 3
       
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init -reconfigure
-      
-      # Skip import - using new clean resources with different names
-      
-      - name: Force Unlock State (if locked)
-        working-directory: ./terraform
-        run: |
-          # Try to unlock any stale locks
           terraform force-unlock -force 5af19c57-fcd9-bb36-6a3d-9d197f733333 || true
           terraform force-unlock -force 0c0467e1-d864-13fd-3987-a3e9d3dd1728 || true
           terraform force-unlock -force 729f35fe-f6fb-948a-89a0-de277c200a28 || true
