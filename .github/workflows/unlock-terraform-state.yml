@@ -1,0 +1,41 @@
+name: Unlock Terraform State
+
+on:
+  workflow_dispatch:
+    inputs:
+      lock_id:
+        description: 'Lock ID to unlock (from error message)'
+        required: true
+        default: '729f35fe-f6fb-948a-89a0-de277c200a28'
+
+jobs:
+  unlock:
+    name: Force Unlock Terraform State
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Force Unlock
+        working-directory: ./terraform
+        run: |
+          echo "Unlocking state with ID: ${{ github.event.inputs.lock_id }}"
+          terraform force-unlock -force ${{ github.event.inputs.lock_id }}
+          echo "✅ State unlocked successfully"
