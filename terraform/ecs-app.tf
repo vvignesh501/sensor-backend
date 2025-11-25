@@ -230,8 +230,8 @@ resource "aws_ecs_cluster" "app_cluster" {
 }
 
 # IAM Role for ECS Task Execution
-resource "aws_iam_role" "ecs_task_execution_role" {
-  name = "sensor-ecs-task-execution-role"
+resource "aws_iam_role" "ecs_app_execution_role" {
+  name = "sensor-ecs-app-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -247,13 +247,13 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
+resource "aws_iam_role_policy_attachment" "ecs_app_execution_policy" {
+  role       = aws_iam_role.ecs_app_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# CloudWatch Log Group
-resource "aws_cloudwatch_log_group" "ecs_logs" {
+# CloudWatch Log Group for ECS
+resource "aws_cloudwatch_log_group" "ecs_app_logs" {
   name              = "/ecs/sensor-app"
   retention_in_days = 1  # Minimal retention to save cost
 }
@@ -265,7 +265,7 @@ resource "aws_ecs_task_definition" "app_task" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"     # Smallest: 0.25 vCPU
   memory                   = "512"     # Smallest: 0.5 GB
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  execution_role_arn       = aws_iam_role.ecs_app_execution_role.arn
 
   container_definitions = jsonencode([
     {
@@ -318,19 +318,19 @@ resource "aws_ecs_service" "app_service" {
   depends_on = [aws_lb_listener.app_listener]
 }
 
-# Outputs
-output "app_url" {
+# Outputs for ECS deployment
+output "ecs_app_url" {
   value       = "http://${aws_lb.app_alb.dns_name}"
   description = "URL to access the FastAPI app"
 }
 
-output "rds_endpoint" {
+output "ecs_rds_endpoint" {
   value       = aws_db_instance.postgres.endpoint
   description = "RDS PostgreSQL endpoint"
   sensitive   = true
 }
 
-output "ecr_repository_url" {
+output "ecs_ecr_repository_url" {
   value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/sensor-backend"
   description = "ECR repository URL for Docker images"
 }

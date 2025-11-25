@@ -1,11 +1,11 @@
 output "lambda_function_arn" {
   description = "ARN of the Lambda function"
-  value       = aws_lambda_function.data_processor.arn
+  value       = data.aws_lambda_function.data_processor.arn
 }
 
 output "lambda_function_name" {
   description = "Name of the Lambda function"
-  value       = aws_lambda_function.data_processor.function_name
+  value       = data.aws_lambda_function.data_processor.function_name
 }
 
 output "source_bucket_name" {
@@ -48,10 +48,7 @@ output "cloudwatch_dashboard_url" {
   value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.sensor_analytics.dashboard_name}"
 }
 
-output "vpc_id" {
-  description = "VPC ID"
-  value       = aws_vpc.sensor_analytics.id
-}
+
 
 output "lambda_role_arn" {
   description = "ARN of the Lambda execution role"
