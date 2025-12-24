@@ -1,0 +1,142 @@
+---
+# Sensor Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sensor-service
+  namespace: sensor-backend
+  labels:
+    app: sensor-service
+    tier: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sensor-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: sensor-service
+        tier: backend
+    spec:
+      containers:
+      - name: sensor-service
+        image: your-registry/sensor-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8001
+          name: http
+        env:
+        - name: SERVICE_NAME
+          value: "sensor-service"
+        - name: PORT
+          value: "8001"
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_PASSWORD
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: KAFKA_TOPIC
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - sensor-service
+              topologyKey: kubernetes.io/hostname
+
+---
+# Sensor Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sensor-service
+  namespace: sensor-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: sensor-service
+  ports:
+  - port: 8001
+    targetPort: 8001
+    protocol: TCP
+
+---
+# Sensor Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sensor-service-hpa
+  namespace: sensor-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sensor-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

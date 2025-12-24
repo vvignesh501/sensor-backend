@@ -1,0 +1,103 @@
+name: 1. Provision Infrastructure (EKS Cluster)
+
+on:
+  # Only run when infrastructure files change
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/1-provision-infrastructure.yml'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.0
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action || 'apply' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Format Check
+      working-directory: terraform
+      run: terraform fmt -check
+      continue-on-error: true
+    
+    - name: Terraform Init
+      working-directory: terraform
+      run: |
+        terraform init \
+          -backend-config="bucket=sensor-backend-terraform-state" \
+          -backend-config="key=eks/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+    
+    - name: Terraform Validate
+      working-directory: terraform
+      run: terraform validate
+    
+    - name: Terraform Plan
+      working-directory: terraform
+      run: |
+        terraform plan \
+          -out=tfplan \
+          -var="cluster_name=sensor-backend-cluster" \
+          -var="region=${{ env.AWS_REGION }}"
+    
+    - name: Terraform Apply
+      if: |
+        (github.event.inputs.action == 'apply' || github.event_name == 'push') &&
+        github.ref == 'refs/heads/main'
+      working-directory: terraform
+      run: terraform apply -auto-approve tfplan
+    
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      working-directory: terraform
+      run: terraform destroy -auto-approve
+    
+    - name: Configure kubectl
+      if: github.event.inputs.action != 'destroy'
+      run: |
+        aws eks update-kubeconfig \
+          --name sensor-backend-cluster \
+          --region ${{ env.AWS_REGION }}
+        
+        kubectl get nodes
+    
+    - name: Output Cluster Info
+      if: github.event.inputs.action != 'destroy'
+      run: |
+        echo "✅ EKS Cluster Created Successfully!"
+        echo "Cluster Name: sensor-backend-cluster"
+        echo "Region: ${{ env.AWS_REGION }}"
+        echo ""
+        echo "To connect locally:"
+        echo "aws eks update-kubeconfig --name sensor-backend-cluster --region ${{ env.AWS_REGION }}"

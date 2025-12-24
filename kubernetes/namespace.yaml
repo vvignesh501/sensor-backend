@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sensor-backend
+  labels:
+    name: sensor-backend
+    environment: production

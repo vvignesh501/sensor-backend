@@ -1,0 +1,47 @@
+---
+# Ingress Controller (NGINX)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sensor-backend-ingress
+  namespace: sensor-backend
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # For SSL
+spec:
+  tls:
+  - hosts:
+    - api.sensor-backend.com
+    secretName: sensor-backend-tls
+  rules:
+  - host: api.sensor-backend.com
+    http:
+      paths:
+      # API Gateway routes
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 80
+      
+      # Direct service routes (optional, for debugging)
+      - path: /sensor-service
+        pathType: Prefix
+        backend:
+          service:
+            name: sensor-service
+            port:
+              number: 8001
+      
+      - path: /auth-service
+        pathType: Prefix
+        backend:
+          service:
+            name: auth-service
+            port:
+              number: 8002

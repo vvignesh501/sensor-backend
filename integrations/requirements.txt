@@ -1,0 +1,5 @@
+# Slack SDK for Python
+slack-sdk==3.23.0
+
+# For async Slack operations (optional)
+aiohttp==3.9.1

@@ -1,0 +1,182 @@
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # NGINX - API Gateway, Load Balancer, Rate Limiter
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-gateway
+    ports:
+      - "80:80"
+      - "8080:8080"  # Monitoring port
+    volumes:
+      - ./nginx-advanced.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - app1
+      - app2
+      - app3
+      - api-gateway
+      - auth-service
+      - sensor-service
+      - kafka-service
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # FASTAPI APPLICATION INSTANCES (Load Balanced)
+  # ==========================================================================
+  app1:
+    build: .
+    container_name: fastapi-app1
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/sensordb
+      - INSTANCE_ID=app1
+    depends_on:
+      - db
+    networks:
+      - backend
+    restart: unless-stopped
+
+  app2:
+    build: .
+    container_name: fastapi-app2
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/sensordb
+      - INSTANCE_ID=app2
+    depends_on:
+      - db
+    networks:
+      - backend
+    restart: unless-stopped
+
+  app3:
+    build: .
+    container_name: fastapi-app3
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/sensordb
+      - INSTANCE_ID=app3
+    depends_on:
+      - db
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # ==========================================================================
+  # MICROSERVICES
+  # ==========================================================================
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    container_name: api-gateway
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - SENSOR_SERVICE_URL=http://sensor-service:8002
+      - KAFKA_SERVICE_URL=http://kafka-service:8003
+    networks:
+      - backend
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+    container_name: auth-service
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/sensordb
+      - JWT_SECRET=your-secret-key-here
+    depends_on:
+      - db
+    networks:
+      - backend
+    restart: unless-stopped
+
+  sensor-service:
+    build:
+      context: ./services/sensor-service
+    container_name: sensor-service
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/sensordb
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - db
+      - kafka
+    networks:
+      - backend
+    restart: unless-stopped
+
+  kafka-service:
+    build:
+      context: ./services/kafka-service
+    container_name: kafka-service
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # ==========================================================================
+  # DATABASE
+  # ==========================================================================
+  db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sensordb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # KAFKA
+  # ==========================================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - backend
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  nginx-cache:
+  nginx-logs:

@@ -1,0 +1,93 @@
+---
+# Auth Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: sensor-backend
+  labels:
+    app: auth-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        tier: backend
+    spec:
+      containers:
+      - name: auth-service
+        image: your-registry/auth-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8002
+          name: http
+        env:
+        - name: SERVICE_NAME
+          value: "auth-service"
+        - name: PORT
+          value: "8002"
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_PASSWORD
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: JWT_SECRET_KEY
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+# Auth Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: sensor-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP

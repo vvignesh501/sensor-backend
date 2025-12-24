@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: sensor-backend
+data:
+  # Database configuration
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "sensordb"
+  
+  # Redis configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # Kafka configuration
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-0.kafka-headless:9092,kafka-1.kafka-headless:9092,kafka-2.kafka-headless:9092"
+  KAFKA_TOPIC: "sensor-events"
+  
+  # Service URLs
+  AUTH_SERVICE_URL: "http://auth-service:8002"
+  SENSOR_SERVICE_URL: "http://sensor-service:8001"
+  ANALYTICS_SERVICE_URL: "http://analytics-service:8003"
+  
+  # Application settings
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"

@@ -33,7 +33,7 @@ START_TIME = datetime.utcnow()
 class ScaledAsyncDatabase:
     def __init__(self):
         self.pool = None
-        self.db_url = "postgresql://postgres:postgresql%409891@localhost:5434/sensordb"
+        self.db_url = "postgresql://postgres:postgresql%409891@localhost:5435/sensordb"
     
     async def ensure_connection(self):
         if self.pool is None:

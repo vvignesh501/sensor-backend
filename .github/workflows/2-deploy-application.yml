@@ -1,0 +1,182 @@
+name: 2. Deploy Application to EKS
+
+on:
+  # Run when application code changes
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'services/**'
+      - 'kubernetes/**'
+      - 'Dockerfile*'
+      - 'requirements.txt'
+      - '.github/workflows/2-deploy-application.yml'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: sensor-backend-cluster
+  ECR_REPOSITORY_PREFIX: sensor-backend
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Generate Image Tag
+      id: meta
+      run: |
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        echo "tags=$SHORT_SHA" >> $GITHUB_OUTPUT
+    
+    - name: Build and Push API Gateway
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.meta.outputs.tags }}
+      run: |
+        docker build \
+          -f Dockerfile.api-gateway \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-api-gateway:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-api-gateway:latest \
+          .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-api-gateway:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-api-gateway:latest
+    
+    - name: Build and Push Sensor Service
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.meta.outputs.tags }}
+      run: |
+        docker build \
+          -f Dockerfile.sensor-service \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-sensor-service:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-sensor-service:latest \
+          .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-sensor-service:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_PREFIX-sensor-service:latest
+    
+    - name: Image Scan
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.meta.outputs.tags }}
+      run: |
+        aws ecr start-image-scan \
+          --repository-name $ECR_REPOSITORY_PREFIX-api-gateway \
+          --image-id imageTag=$IMAGE_TAG \
+          --region ${{ env.AWS_REGION }} || true
+
+  deploy-to-eks:
+    name: Deploy to EKS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --name ${{ env.EKS_CLUSTER_NAME }} \
+          --region ${{ env.AWS_REGION }}
+    
+    - name: Verify Cluster Connection
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+    
+    - name: Create Namespace
+      run: |
+        kubectl apply -f kubernetes/namespace.yaml
+    
+    - name: Deploy Secrets
+      run: |
+        kubectl apply -f kubernetes/secrets/ || echo "Secrets already exist"
+    
+    - name: Deploy ConfigMaps
+      run: |
+        kubectl apply -f kubernetes/configmaps/
+    
+    - name: Deploy Infrastructure (Databases, Kafka)
+      run: |
+        kubectl apply -f kubernetes/infrastructure/
+        
+        # Wait for infrastructure to be ready
+        kubectl wait --for=condition=ready pod -l app=postgres -n sensor-backend --timeout=300s || true
+        kubectl wait --for=condition=ready pod -l app=redis -n sensor-backend --timeout=300s || true
+    
+    - name: Update Image Tags in Manifests
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+      run: |
+        # Update image references
+        find kubernetes/services -name "*.yaml" -exec sed -i \
+          "s|your-registry|$ECR_REGISTRY/$ECR_REPOSITORY_PREFIX|g" {} \;
+        find kubernetes/services -name "*.yaml" -exec sed -i \
+          "s|:latest|:$IMAGE_TAG|g" {} \;
+    
+    - name: Deploy Services
+      run: |
+        kubectl apply -f kubernetes/services/
+    
+    - name: Deploy Ingress
+      run: |
+        kubectl apply -f kubernetes/ingress/
+    
+    - name: Wait for Deployments
+      run: |
+        kubectl rollout status deployment/api-gateway -n sensor-backend --timeout=5m
+        kubectl rollout status deployment/sensor-service -n sensor-backend --timeout=5m
+        kubectl rollout status deployment/auth-service -n sensor-backend --timeout=5m
+    
+    - name: Get Service URLs
+      run: |
+        echo "=== Deployment Complete ==="
+        echo ""
+        echo "Services:"
+        kubectl get services -n sensor-backend
+        echo ""
+        echo "Pods:"
+        kubectl get pods -n sensor-backend
+        echo ""
+        echo "Ingress:"
+        kubectl get ingress -n sensor-backend
+    
+    - name: Run Health Checks
+      run: |
+        # Port-forward and test
+        kubectl port-forward service/api-gateway 8080:80 -n sensor-backend &
+        sleep 5
+        curl -f http://localhost:8080/health || echo "Health check failed"
+        pkill -f "port-forward"

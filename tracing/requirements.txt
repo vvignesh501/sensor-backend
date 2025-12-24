@@ -1,0 +1,19 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.1
+
+# OpenTelemetry core
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+
+# OpenTelemetry instrumentations
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+opentelemetry-instrumentation-sqlalchemy==0.42b0
+opentelemetry-instrumentation-redis==0.42b0
+opentelemetry-instrumentation-httpx==0.42b0
+
+# Jaeger exporter
+opentelemetry-exporter-jaeger==1.21.0
+opentelemetry-exporter-jaeger-thrift==1.21.0

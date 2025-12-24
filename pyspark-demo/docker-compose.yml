@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  pyspark-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pyspark-processor
+    ports:
+      - "8501:8501"  # Streamlit dashboard
+      - "4040:4040"  # Spark UI
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-sensor-data-demo}
+    volumes:
+      - ~/.aws:/root/.aws:ro  # Share AWS credentials
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - spark-network
+
+networks:
+  spark-network:
+    driver: bridge

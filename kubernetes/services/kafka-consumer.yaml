@@ -1,0 +1,104 @@
+---
+# Kafka Consumer Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-consumer
+  namespace: sensor-backend
+  labels:
+    app: kafka-consumer
+    tier: worker
+spec:
+  replicas: 3  # Multiple consumers for parallel processing
+  selector:
+    matchLabels:
+      app: kafka-consumer
+  template:
+    metadata:
+      labels:
+        app: kafka-consumer
+        tier: worker
+    spec:
+      containers:
+      - name: kafka-consumer
+        image: your-registry/kafka-consumer:latest
+        imagePullPolicy: Always
+        env:
+        - name: SERVICE_NAME
+          value: "kafka-consumer"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: KAFKA_TOPIC
+        - name: KAFKA_GROUP_ID
+          value: "sensor-consumer-group"
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: POSTGRES_PASSWORD
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep kafka-consumer || exit 1"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - kafka-consumer
+              topologyKey: kubernetes.io/hostname
+
+---
+# Kafka Consumer HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kafka-consumer-hpa
+  namespace: sensor-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kafka-consumer
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
